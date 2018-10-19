@@ -32,7 +32,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			return
 		}
-		icon.Image = append(icon.Image, m)
+		icon.Add(m)
 	}
 }
 

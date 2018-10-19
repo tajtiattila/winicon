@@ -21,7 +21,7 @@ func testRead(t *testing.T, fn string, siz int) {
 
 	f, err := os.Open(fn)
 	if err != nil {
-		t.Fatal("can't open file:", err)
+		t.Fatal("open file:", err)
 	}
 	defer f.Close()
 

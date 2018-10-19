@@ -10,18 +10,28 @@ import (
 	"io"
 )
 
-// ErrImageTooBig is reported when writing an Icon
-// with an image larger than 256x256 pixels.
-var ErrImageTooBig = errors.New("winicon image too big")
+// ErrImageTooBig is reported when
+// an image is larger than 256x256 pixels.
+var ErrImageTooBig = errors.New("winicon: image too big")
 
 const headerSize = 6
 const ideSize = 16
 const bihSize = 40
 
-// Write writes icon to w in Windows ICO format
-// using the specified options.
-func Write(w io.Writer, icon *Icon, opts ...WriteOption) error {
-	for _, im := range icon.Image {
+// Write writes icon to w using the specified options
+// in Windows ICO format
+//
+// Images must be at most 256x256 pixels.
+//
+// With no options provided
+// 256x256 images are written in PNG format,
+// and all others in BMP format.
+func Write(w io.Writer, icon Icon, opts ...WriteOption) error {
+	if len(icon) == 0 {
+		return ErrEmpty
+	}
+
+	for _, im := range icon {
 		if im.Bounds().Dx() > 256 || im.Bounds().Dy() > 256 {
 			return ErrImageTooBig
 		}
@@ -40,7 +50,7 @@ func Write(w io.Writer, icon *Icon, opts ...WriteOption) error {
 	le := binary.LittleEndian
 	le.PutUint16(header[0:2], 0)
 	le.PutUint16(header[2:4], 1) // ICO format
-	le.PutUint16(header[4:6], uint16(len(icon.Image)))
+	le.PutUint16(header[4:6], uint16(len(icon)))
 
 	_, err := w.Write(header)
 	if err != nil {
@@ -51,8 +61,8 @@ func Write(w io.Writer, icon *Icon, opts ...WriteOption) error {
 	ide := make([]byte, ideSize)
 	var bits [][]byte
 
-	offset := headerSize + len(icon.Image)*ideSize
-	for _, im := range icon.Image {
+	offset := headerSize + len(icon)*ideSize
+	for _, im := range icon {
 		var dx, dy uint8
 		if im.Bounds().Dx() < 256 {
 			dx = uint8(im.Bounds().Dx())
@@ -182,8 +192,8 @@ func (o preferPNG) applyTo(e *encoder) {
 	e.preferPNG = o.v
 }
 
-// PreferPNG writes images in PNG format,
-// if that makes the output image smalled.
+// PreferPNG writes images in PNG format
+// if that makes the icon file smaller.
 func PreferPNG(v bool) WriteOption {
 	return preferPNG{v}
 }

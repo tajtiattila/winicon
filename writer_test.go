@@ -16,7 +16,7 @@ func TestWrite(t *testing.T) {
 }
 
 func testWrite(t *testing.T, fn string, opts ...winicon.WriteOption) {
-	icon := new(winicon.Icon)
+	var icon winicon.Icon
 	for _, siz := range []int{256, 48, 32, 24, 16} {
 		icon.Add(checkers(siz, siz/4,
 			color.NRGBA{0, 255, 0, 255},

@@ -39,7 +39,7 @@ func processFile(destdir, fn string) {
 	}
 
 	base := strings.TrimSuffix(filepath.Base(fn), filepath.Ext(fn))
-	for _, im := range icon.Image {
+	for _, im := range icon {
 		siz := im.Bounds().Size()
 		ofn := filepath.Join(destdir, fmt.Sprintf("%s_%dx%d.png", base, siz.X, siz.Y))
 		f, err := os.Create(ofn)

@@ -10,10 +10,17 @@ import (
 	"io/ioutil"
 )
 
-var ErrFormat = errors.New("bad format")
-var ErrUnsupported = errors.New("unsupported BMP format")
+// ErrFormat is reported when the file is not a Windows ICO format.
+var ErrFormat = errors.New("winicon: bad format")
 
-func Read(r io.Reader) (*Icon, error) {
+// ErrUnsupported is returned when the ICO file uses unsupported BMP options.
+var ErrUnsupported = errors.New("winicon: unsupported BMP format")
+
+// ErrEmpty is returned when the icon is empty.
+var ErrEmpty = errors.New("winicon: empty icon")
+
+// Read reads a icon from r.
+func Read(r io.Reader) (Icon, error) {
 	var header [6]byte
 
 	p := header[:]
@@ -25,6 +32,10 @@ func Read(r io.Reader) (*Icon, error) {
 	zero, format, nimages := le.Uint16(p[0:2]), le.Uint16(p[2:4]), int(le.Uint16(p[4:6]))
 	if zero != 0 || format != 1 {
 		return nil, ErrFormat
+	}
+
+	if nimages == 0 {
+		return nil, ErrEmpty
 	}
 
 	ico, err := ioutil.ReadAll(&io.LimitedReader{
@@ -39,7 +50,7 @@ func Read(r io.Reader) (*Icon, error) {
 		return nil, io.ErrUnexpectedEOF
 	}
 
-	icon := new(Icon)
+	var icon Icon
 	for i := 0; i < nimages; i++ {
 		p := ico[i*ideSize:]
 		siz, ofs := int(le.Uint32(p[8:12])), int(le.Uint32(p[12:16]))
@@ -56,7 +67,7 @@ func Read(r io.Reader) (*Icon, error) {
 			return nil, err
 		}
 
-		icon.Image = append(icon.Image, im)
+		icon.Add(im)
 	}
 
 	return icon, nil
