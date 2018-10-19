@@ -1,9 +1,11 @@
 package winicon
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"image"
+	"image/png"
 	"io"
 	"io/ioutil"
 )
@@ -49,7 +51,7 @@ func Read(r io.Reader) (*Icon, error) {
 			return nil, ErrFormat
 		}
 
-		im, err := decodeBMPbits(ico[ofs : ofs+siz])
+		im, err := decodeImage(ico[ofs : ofs+siz])
 		if err != nil {
 			return nil, err
 		}
@@ -60,17 +62,24 @@ func Read(r io.Reader) (*Icon, error) {
 	return icon, nil
 }
 
-func decodeBMPbits(p []byte) (image.Image, error) {
+func decodeImage(p []byte) (image.Image, error) {
+	if len(p) < 8 {
+		return nil, ErrFormat
+	}
+
+	if p[0] == 0x89 && string(p[1:4]) == "PNG" {
+		return png.Decode(bytes.NewReader(p))
+	}
+
+	// BITMAPINFOHEADER
 	if len(p) < bihSize {
 		return nil, ErrFormat
 	}
 
 	le := binary.LittleEndian
 
-	// BITMAPINFOHEADER
 	bihs, dx, dy2 := le.Uint32(p[0:4]), int(le.Uint32(p[4:8])), int(le.Uint32(p[8:12]))
 	if bihs != bihSize {
-		// TODO(ata): try PNG?
 		return nil, ErrFormat
 	}
 

@@ -1,10 +1,12 @@
 package winicon
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"image"
 	"image/draw"
+	"image/png"
 	"io"
 )
 
@@ -16,11 +18,20 @@ const headerSize = 6
 const ideSize = 16
 const bihSize = 40
 
-func Write(w io.Writer, icon *Icon) error {
+// Write writes icon to w in Windows ICO format
+// using the specified options.
+func Write(w io.Writer, icon *Icon, opts ...WriteOption) error {
 	for _, im := range icon.Image {
 		if im.Bounds().Dx() > 256 || im.Bounds().Dy() > 256 {
 			return ErrImageTooBig
 		}
+	}
+
+	enc := encoder{
+		largePNG: true,
+	}
+	for _, o := range opts {
+		o.applyTo(&enc)
 	}
 
 	// header
@@ -38,6 +49,8 @@ func Write(w io.Writer, icon *Icon) error {
 
 	// icon directory
 	ide := make([]byte, ideSize)
+	var bits [][]byte
+
 	offset := headerSize + len(icon.Image)*ideSize
 	for _, im := range icon.Image {
 		var dx, dy uint8
@@ -51,10 +64,11 @@ func Write(w io.Writer, icon *Icon) error {
 		ide[1] = dy
 		le.PutUint16(ide[4:6], 1)  // color planes
 		le.PutUint16(ide[6:8], 32) // bits per pixel
-		nbytes := calcBMPsize(im)
-		le.PutUint32(ide[8:12], uint32(nbytes))
+		imbits := enc.imageBits(im)
+		le.PutUint32(ide[8:12], uint32(len(imbits)))
 		le.PutUint32(ide[12:16], uint32(offset))
-		offset += nbytes
+		bits = append(bits, imbits)
+		offset += len(imbits)
 		_, err := w.Write(ide)
 		if err != nil {
 			return err
@@ -62,8 +76,8 @@ func Write(w io.Writer, icon *Icon) error {
 	}
 
 	// bitmap image data
-	for _, im := range icon.Image {
-		_, err := w.Write(encodeBMPbits(im))
+	for _, imbits := range bits {
+		_, err := w.Write(imbits)
 		if err != nil {
 			return err
 		}
@@ -72,24 +86,40 @@ func Write(w io.Writer, icon *Icon) error {
 	return nil
 }
 
-func calcBMPsize(im image.Image) int {
-	m := asNRGBA(im)
+type encoder struct {
+	preferPNG bool
+	largePNG  bool
+}
 
-	dx := m.Bounds().Dx()
-	dy := m.Bounds().Dy()
+func (e encoder) imageBits(m image.Image) []byte {
+	if e.largePNG {
+		dx, dy := m.Bounds().Dx(), m.Bounds().Dy()
+		if dx >= 256 && dy >= 256 {
+			buf := new(bytes.Buffer)
+			err := png.Encode(buf, m)
+			if err == nil {
+				return buf.Bytes()
+			}
+		}
+	}
 
-	imageRowBytes := dx * 4 // 32 bpp
-	maskRowBytes := ((dx + 31) / 32) * 4
+	bmpBits := encodeBMPbits(m)
 
-	nbytes := imageRowBytes*dy + maskRowBytes*dy
-	return bihSize + nbytes
+	if e.preferPNG {
+		buf := new(bytes.Buffer)
+		err := png.Encode(buf, m)
+		if err == nil && buf.Len() < len(bmpBits) {
+			return buf.Bytes()
+		}
+	}
+
+	return bmpBits
 }
 
 func encodeBMPbits(im image.Image) []byte {
 	m := asNRGBA(im)
 
-	dx := m.Bounds().Dx()
-	dy := m.Bounds().Dy()
+	dx, dy := m.Bounds().Dx(), m.Bounds().Dy()
 
 	imageRowBytes := dx * 4 // 32 bpp
 	maskRowBytes := ((dx + 31) / 32) * 4
@@ -137,4 +167,36 @@ func asNRGBA(im image.Image) *image.NRGBA {
 	rgba = image.NewNRGBA(im.Bounds())
 	draw.Draw(rgba, rgba.Bounds(), im, im.Bounds().Min, draw.Src)
 	return rgba
+}
+
+// WriteOption is an option for Write.
+type WriteOption interface {
+	applyTo(*encoder)
+}
+
+type preferPNG struct {
+	v bool
+}
+
+func (o preferPNG) applyTo(e *encoder) {
+	e.preferPNG = o.v
+}
+
+// PreferPNG writes images in PNG format,
+// if that makes the output image smalled.
+func PreferPNG(v bool) WriteOption {
+	return preferPNG{v}
+}
+
+type largePNG struct {
+	v bool
+}
+
+func (o largePNG) applyTo(e *encoder) {
+	e.largePNG = o.v
+}
+
+// LargePNG writes 256x256 images in PNG format.
+func LargePNG(v bool) WriteOption {
+	return largePNG{v}
 }
